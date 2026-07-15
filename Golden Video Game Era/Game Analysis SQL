@@ -1,0 +1,27 @@
+-- best_selling_games
+SELECT * FROM public.game_sales
+ORDER BY games_sold DESC
+LIMIT 10;
+
+-- critics_top_ten_years
+SELECT gs.year, round(avg(r.critic_score),2) AS avg_critic_score, count(r.name) as num_games
+	FROM reviews r
+INNER JOIN game_sales gs
+ON r.name = gs.name
+GROUP BY gs.year
+HAVING count(r.name) >=4
+ORDER BY avg_critic_score DESC
+LIMIT 10;
+
+-- golden_years
+SELECT 
+    c.year, 
+    c.num_games, 
+    c.avg_critic_score, 
+    u.avg_user_score,
+    (c.avg_critic_score - u.avg_user_score) AS diff
+FROM public.critics_avg_year_rating c
+INNER JOIN public.users_avg_year_rating u
+    ON c.year = u.year
+WHERE c.avg_critic_score > 9 OR u.avg_user_score > 9
+	ORDER BY year asc;
