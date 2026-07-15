@@ -1,0 +1,77 @@
+SELECT
+	b.*,
+	CASE
+		WHEN 
+			b.height NOT BETWEEN b.lcl AND b.ucl
+		THEN TRUE
+		ELSE FALSE
+	END as alert
+FROM (
+	SELECT
+		a.*, 
+		a.avg_height + 3*a.stddev_height/SQRT(5) AS ucl, 
+		a.avg_height - 3*a.stddev_height/SQRT(5) AS lcl  
+	FROM (
+		SELECT 
+			operator,
+			ROW_NUMBER() OVER w AS row_number, 
+			height, 
+			AVG(height) OVER w AS avg_height, 
+			STDDEV(height) OVER w AS stddev_height
+		FROM manufacturing_parts 
+		WINDOW w AS (
+			PARTITION BY operator 
+			ORDER BY item_no 
+			ROWS BETWEEN 4 PRECEDING AND CURRENT ROW
+		)
+	) AS a
+	WHERE a.row_number >= 5
+) AS b;
+
+
+--Pinpoint operators whos emachines concisently produce parts outside control limits
+WITH stats AS (
+    SELECT
+        AVG(length) AS avg_length,
+        STDDEV(length) AS std_length,
+        AVG(width) AS avg_width,
+        STDDEV(width) AS std_width,
+        AVG(height) AS avg_height,
+        STDDEV(height) AS std_height
+    FROM manufacturing_parts
+),
+flagged AS (
+    SELECT
+        mp.*,
+        CASE 
+            WHEN 
+                mp.length > s.avg_length + 3 * s.std_length OR
+                mp.length < s.avg_length - 3 * s.std_length OR
+                mp.width > s.avg_width + 3 * s.std_width OR
+                mp.width < s.avg_width - 3 * s.std_width OR
+                mp.height > s.avg_height + 3 * s.std_height OR
+                mp.height < s.avg_height - 3 * s.std_height
+            THEN 1 ELSE 0
+        END AS alert_flag
+    FROM manufacturing_parts mp
+    CROSS JOIN stats s
+),
+operator_alerts AS (
+    SELECT
+        operator,
+        SUM(alert_flag) AS total_alerts
+    FROM flagged
+    GROUP BY operator
+),
+avg_alerts AS (
+    SELECT
+        AVG(total_alerts) AS avg_alerts_per_operator
+    FROM operator_alerts
+)
+SELECT
+    oa.operator,
+    oa.total_alerts
+FROM operator_alerts oa
+CROSS JOIN avg_alerts a
+WHERE oa.total_alerts > a.avg_alerts_per_operator
+ORDER BY oa.total_alerts DESC;
