@@ -1,0 +1,70 @@
+SELECT product_line,
+    CASE WHEN EXTRACT('month' from date) = 6 THEN 'June'
+        WHEN EXTRACT('month' from date) = 7 THEN 'July'
+        WHEN EXTRACT('month' from date) = 8 THEN 'August'
+    END as month,
+    warehouse,
+	SUM(total) - SUM(payment_fee) AS net_revenue
+FROM sales
+WHERE client_type = 'Wholesale'
+GROUP BY product_line, warehouse, month
+ORDER BY product_line, month, net_revenue DESC
+
+
+WITH revenue_calc AS (
+    SELECT
+        warehouse,
+        DATE_TRUNC('month', date) AS month,
+        payment,
+        SUM(total * (1 - payment_fee)) AS net_revenue
+    FROM Sales
+    GROUP BY warehouse, DATE_TRUNC('month', date), payment
+),
+ranked AS (
+    SELECT
+        warehouse,
+        month,
+        payment,
+        net_revenue,
+        RANK() OVER (
+            PARTITION BY warehouse, month
+            ORDER BY net_revenue DESC
+        ) AS rnk
+    FROM revenue_calc
+)
+SELECT
+    warehouse,
+    month,
+    payment AS top_payment_method,
+    net_revenue
+FROM ranked
+WHERE rnk = 1
+ORDER BY warehouse, month;
+
+
+WITH product_counts AS (
+    SELECT
+        client_type,
+        product_line,
+        SUM(quantity) AS total_quantity
+    FROM Sales
+    GROUP BY client_type, product_line
+),
+ranked AS (
+    SELECT
+        client_type,
+        product_line,
+        total_quantity,
+        ROW_NUMBER() OVER (
+            PARTITION BY client_type
+            ORDER BY total_quantity DESC
+        ) AS rn
+    FROM product_counts
+)
+SELECT
+    client_type,
+    product_line,
+    total_quantity
+FROM ranked
+WHERE rn <= 3
+ORDER BY client_type, rn;
